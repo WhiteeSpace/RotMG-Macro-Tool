@@ -1,12 +1,12 @@
-ROTMG MACRO TOOL - AUTOHOTKEY v2
-================================
+# ROTMG MACRO TOOL - AUTOHOTKEY v2
+# ================================
 
-1. Install AutoHotkey v2 from https://www.autohotkey.com/
-2. Run MacroMenu.ahk.
-3. Press F1 to open or hide the settings menu.
-4. Click a Hotkey field and press the key you want to assign.
-5. Edit the associated message.
-6. Click "Save settings".
+##1. Install AutoHotkey v2 from https://www.autohotkey.com/
+##2. Run MacroMenu.ahk.
+##3. Press F1 to open or hide the settings menu.
+##4. Click a Hotkey field and press the key you want to assign.
+##5. Edit the associated message.
+##6. Click "Save settings".
 
 Text macros automatically send:
 
