@@ -31,6 +31,7 @@ global ActiveKeyCaptureControl := 0
 global MenuHotkeyControl
 global ToolToggleHotkeyControl
 global ToolToggleButton
+global NeutralFocusControl
 global StatusText
 global MacroGui
 
@@ -128,7 +129,8 @@ BuildGui() {
     global EmergencyHealingMacroIndex
     global MacroKeys, MacroTexts, MenuHotkey, ToolToggleHotkey
     global MenuHotkeyControl, ToolToggleHotkeyControl
-    global KeyControls, TextControls, ToolToggleButton, StatusText
+    global KeyControls, TextControls, ToolToggleButton
+    global NeutralFocusControl, StatusText
 
     MacroGui := Gui("+AlwaysOnTop", "RotMG Macro Tool")
     MacroGui.SetFont("s10", "Segoe UI")
@@ -199,6 +201,10 @@ BuildGui() {
     StatusText := MacroGui.AddText(
         "xm y+14 w600 c555555",
         "Auto-emote repeats every 2 seconds. Press its hotkey again to stop it."
+    )
+    NeutralFocusControl := MacroGui.AddButton(
+        "x-1000 y-1000 w1 h1",
+        ""
     )
 
     saveButton.OnEvent("Click", SaveConfiguration)
@@ -279,6 +285,7 @@ ToggleMenu(*) {
 
 ShowMenu(*) {
     global MacroGui, IsEditingHotkeys
+    global ActiveKeyCaptureControl, NeutralFocusControl
 
     ; While editing, no old hotkey can fire or interfere with assigning the
     ; same key again. Unsaved field changes therefore remain purely visual.
@@ -287,6 +294,8 @@ ShowMenu(*) {
     Hotkey("XButton1", CaptureSideButton.Bind("XButton1"), "On")
     Hotkey("XButton2", CaptureSideButton.Bind("XButton2"), "On")
     MacroGui.Show("AutoSize Center")
+    ActiveKeyCaptureControl := 0
+    NeutralFocusControl.Focus()
 }
 
 HideMenu(*) {
@@ -301,14 +310,14 @@ HideMenu(*) {
 }
 
 ToggleTool(*) {
-    global ToolEnabled, ToolToggleButton
+    global ToolEnabled, ToolToggleButton, IsEditingHotkeys
     global AutoEmoteEnabled, EmergencyHealingQueuedPresses
 
     ToolEnabled := !ToolEnabled
 
     if ToolEnabled {
         ToolToggleButton.Text := "Disable tool"
-        ShowStatus("Tool enabled. Hotkeys will resume when the menu is hidden.")
+        ShowStatus("Tool enabled. All configured hotkeys are active.")
     } else {
         ToolToggleButton.Text := "Enable tool"
         AutoEmoteEnabled := false
@@ -316,6 +325,11 @@ ToggleTool(*) {
         SetTimer(SendAutomaticEmote, 0)
         ShowStatus("Tool disabled. Only the menu hotkey will remain active.")
     }
+
+    ; Immediately rebuild the active hotkeys when toggled outside the
+    ; settings window. While editing, HideMenu will apply the correct state.
+    if !IsEditingHotkeys
+        ApplyHotkeys()
 }
 
 SaveConfiguration(*) {
