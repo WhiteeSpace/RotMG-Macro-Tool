@@ -31,7 +31,6 @@ global ActiveKeyCaptureControl := 0
 global MenuHotkeyControl
 global ToolToggleHotkeyControl
 global ToolToggleButton
-global NeutralFocusControl
 global StatusText
 global MacroGui
 
@@ -129,8 +128,7 @@ BuildGui() {
     global EmergencyHealingMacroIndex
     global MacroKeys, MacroTexts, MenuHotkey, ToolToggleHotkey
     global MenuHotkeyControl, ToolToggleHotkeyControl
-    global KeyControls, TextControls, ToolToggleButton
-    global NeutralFocusControl, StatusText
+    global KeyControls, TextControls, ToolToggleButton, StatusText
 
     MacroGui := Gui("+AlwaysOnTop", "RotMG Macro Tool")
     MacroGui.SetFont("s10", "Segoe UI")
@@ -201,10 +199,6 @@ BuildGui() {
     StatusText := MacroGui.AddText(
         "xm y+14 w600 c555555",
         "Auto-emote repeats every 2 seconds. Press its hotkey again to stop it."
-    )
-    NeutralFocusControl := MacroGui.AddButton(
-        "x-1000 y-1000 w1 h1",
-        ""
     )
 
     saveButton.OnEvent("Click", SaveConfiguration)
@@ -285,7 +279,7 @@ ToggleMenu(*) {
 
 ShowMenu(*) {
     global MacroGui, IsEditingHotkeys
-    global ActiveKeyCaptureControl, NeutralFocusControl
+    global ActiveKeyCaptureControl, KeyCaptureControls
 
     ; While editing, no old hotkey can fire or interfere with assigning the
     ; same key again. Unsaved field changes therefore remain purely visual.
@@ -295,7 +289,13 @@ ShowMenu(*) {
     Hotkey("XButton2", CaptureSideButton.Bind("XButton2"), "On")
     MacroGui.Show("AutoSize Center")
     ActiveKeyCaptureControl := 0
-    NeutralFocusControl.Focus()
+
+    ; Remove the automatic focus and text selection Windows gives to the
+    ; first editable control when a dialog is shown.
+    for hwnd, control in KeyCaptureControls
+        SendMessage(0x00B1, 0, 0, control) ; EM_SETSEL: caret at start
+
+    DllCall("SetFocus", "Ptr", MacroGui.Hwnd)
 }
 
 HideMenu(*) {
