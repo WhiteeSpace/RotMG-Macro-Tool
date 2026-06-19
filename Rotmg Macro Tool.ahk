@@ -33,8 +33,6 @@ SetKeyDelay(30, 30)
 LoadConfiguration()
 BuildGui()
 ApplyHotkeys()
-OnMessage(0x0100, CaptureKeyboardKey) ; WM_KEYDOWN
-OnMessage(0x0104, CaptureKeyboardKey) ; WM_SYSKEYDOWN
 OnMessage(0x020B, CaptureMouseButton) ; WM_XBUTTONDOWN
 
 A_TrayMenu.Delete()
@@ -186,41 +184,9 @@ BuildGui() {
 AddKeyCapture(guiObject, options, currentKey) {
     global KeyCaptureControls
 
-    control := guiObject.AddEdit(options " ReadOnly Center", currentKey)
+    control := guiObject.AddHotkey(options, currentKey)
     KeyCaptureControls[control.Hwnd] := control
     return control
-}
-
-CaptureKeyboardKey(wParam, lParam, msg, hwnd) {
-    global KeyCaptureControls
-
-    if !KeyCaptureControls.Has(hwnd)
-        return
-
-    control := KeyCaptureControls[hwnd]
-    keyName := GetKeyName("vk" Format("{:02X}", wParam))
-
-    if (keyName = "Backspace" || keyName = "Delete") {
-        control.Value := ""
-        return 1
-    }
-
-    if (keyName = "Shift" || keyName = "Ctrl"
-        || keyName = "Alt" || keyName = "LWin" || keyName = "RWin")
-        return 1
-
-    modifiers := ""
-    if GetKeyState("Ctrl")
-        modifiers .= "^"
-    if GetKeyState("Alt")
-        modifiers .= "!"
-    if GetKeyState("Shift")
-        modifiers .= "+"
-    if GetKeyState("LWin") || GetKeyState("RWin")
-        modifiers .= "#"
-
-    control.Value := modifiers keyName
-    return 1
 }
 
 CaptureMouseButton(wParam, lParam, msg, hwnd) {
@@ -229,15 +195,17 @@ CaptureMouseButton(wParam, lParam, msg, hwnd) {
     if !WinActive("ahk_id " MacroGui.Hwnd)
         return
 
-    focusedHwnd := ControlGetFocus("ahk_id " MacroGui.Hwnd)
-    if !KeyCaptureControls.Has(focusedHwnd)
+    ; Assign the side mouse button to the field physically under the cursor,
+    ; never to a previously focused field such as Open menu hotkey.
+    MouseGetPos(, , , &controlHwnd, 2)
+    if !KeyCaptureControls.Has(controlHwnd)
         return
 
     buttonNumber := (wParam >> 16) & 0xFFFF
     if (buttonNumber = 1)
-        KeyCaptureControls[focusedHwnd].Value := "XButton1"
+        KeyCaptureControls[controlHwnd].Value := "XButton1"
     else if (buttonNumber = 2)
-        KeyCaptureControls[focusedHwnd].Value := "XButton2"
+        KeyCaptureControls[controlHwnd].Value := "XButton2"
 
     return 1
 }
