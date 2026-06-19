@@ -14,6 +14,9 @@ global AutoEmoteMacroIndex := 9
 global QuickEmoteMacroIndex := 10
 global EmergencyHealingMacroIndex := 11
 global MenuHotkey := "F1"
+global ToolToggleHotkey := "F12"
+global ToolEnabled := true
+global IsEditingHotkeys := false
 global AutoEmoteEnabled := false
 global AutoEmoteInterval := 2000
 global EmergencyHealingQueuedPresses := 0
@@ -24,7 +27,10 @@ global ActiveHotkeys := Map()
 global KeyControls := []
 global TextControls := []
 global KeyCaptureControls := Map()
+global ActiveKeyCaptureControl := 0
 global MenuHotkeyControl
+global ToolToggleHotkeyControl
+global ToolToggleButton
 global StatusText
 global MacroGui
 
@@ -33,7 +39,8 @@ SetKeyDelay(30, 30)
 LoadConfiguration()
 BuildGui()
 ApplyHotkeys()
-OnMessage(0x020B, CaptureMouseButton) ; WM_XBUTTONDOWN
+OnMessage(0x0100, CaptureKeyboardKey) ; WM_KEYDOWN
+OnMessage(0x0104, CaptureKeyboardKey) ; WM_SYSKEYDOWN
 
 A_TrayMenu.Delete()
 A_TrayMenu.Add("Open macro settings", (*) => ShowMenu())
@@ -41,10 +48,17 @@ A_TrayMenu.Add("Exit", (*) => ExitApp())
 A_TrayMenu.Default := "Open macro settings"
 
 LoadConfiguration() {
-    global ConfigFile, MacroCount, MacroKeys, MacroTexts, MenuHotkey
+    global ConfigFile, MacroCount, MacroKeys, MacroTexts
+    global MenuHotkey, ToolToggleHotkey
 
     UpgradeDefaultConfiguration()
     MenuHotkey := IniRead(ConfigFile, "Settings", "MenuHotkey", "F1")
+    ToolToggleHotkey := IniRead(
+        ConfigFile,
+        "Settings",
+        "ToolToggleHotkey",
+        "Pause"
+    )
     defaultTexts := [
         "taken?",
         "/who",
@@ -112,8 +126,9 @@ BuildGui() {
     global MacroGui, MacroCount, ScreenshotMacroIndex
     global AutoEmoteMacroIndex, QuickEmoteMacroIndex
     global EmergencyHealingMacroIndex
-    global MacroKeys, MacroTexts, MenuHotkey, MenuHotkeyControl
-    global KeyControls, TextControls, StatusText
+    global MacroKeys, MacroTexts, MenuHotkey, ToolToggleHotkey
+    global MenuHotkeyControl, ToolToggleHotkeyControl
+    global KeyControls, TextControls, ToolToggleButton, StatusText
 
     MacroGui := Gui("+AlwaysOnTop", "RotMG Macro Tool")
     MacroGui.SetFont("s10", "Segoe UI")
@@ -125,6 +140,13 @@ BuildGui() {
         MacroGui,
         "x+10 yp w120",
         MenuHotkey
+    )
+
+    MacroGui.AddText("xm y+8 w170 h25 0x200", "Enable / disable hotkey")
+    ToolToggleHotkeyControl := AddKeyCapture(
+        MacroGui,
+        "x+10 yp w120",
+        ToolToggleHotkey
     )
 
     MacroGui.AddText("xm w140 Center", "Macro")
@@ -168,6 +190,10 @@ BuildGui() {
         "xm y+18 w140 h32 Default",
         "Save settings"
     )
+    ToolToggleButton := MacroGui.AddButton(
+        "x+10 w140 h32",
+        "Disable tool"
+    )
     closeButton := MacroGui.AddButton("x+10 w140 h32", "Hide")
 
     StatusText := MacroGui.AddText(
@@ -176,71 +202,156 @@ BuildGui() {
     )
 
     saveButton.OnEvent("Click", SaveConfiguration)
-    closeButton.OnEvent("Click", (*) => MacroGui.Hide())
-    MacroGui.OnEvent("Close", (*) => MacroGui.Hide())
-    MacroGui.OnEvent("Escape", (*) => MacroGui.Hide())
+    ToolToggleButton.OnEvent("Click", ToggleTool)
+    closeButton.OnEvent("Click", HideMenu)
+    MacroGui.OnEvent("Close", HideMenu)
+    MacroGui.OnEvent("Escape", HideMenu)
 }
 
 AddKeyCapture(guiObject, options, currentKey) {
     global KeyCaptureControls
 
-    control := guiObject.AddHotkey(options, currentKey)
+    control := guiObject.AddEdit(options " ReadOnly Center", currentKey)
     KeyCaptureControls[control.Hwnd] := control
+    control.OnEvent("Focus", SetActiveKeyCapture.Bind(control))
     return control
 }
 
-CaptureMouseButton(wParam, lParam, msg, hwnd) {
-    global MacroGui, KeyCaptureControls
+SetActiveKeyCapture(control, *) {
+    global ActiveKeyCaptureControl
+    ActiveKeyCaptureControl := control
+}
+
+CaptureKeyboardKey(wParam, lParam, msg, hwnd) {
+    global MacroGui, ActiveKeyCaptureControl
+
+    if !DllCall("IsWindowVisible", "Ptr", MacroGui.Hwnd)
+        return
+
+    if !IsObject(ActiveKeyCaptureControl)
+        return
+
+    keyName := GetKeyName("vk" Format("{:02X}", wParam))
+
+    if (keyName = "Backspace" || keyName = "Delete") {
+        ActiveKeyCaptureControl.Value := ""
+        return 1
+    }
+
+    if (keyName = "Shift" || keyName = "Ctrl"
+        || keyName = "Alt" || keyName = "LWin" || keyName = "RWin")
+        return 1
+
+    modifiers := ""
+    if GetKeyState("Ctrl")
+        modifiers .= "^"
+    if GetKeyState("Alt")
+        modifiers .= "!"
+    if GetKeyState("Shift")
+        modifiers .= "+"
+    if GetKeyState("LWin") || GetKeyState("RWin")
+        modifiers .= "#"
+
+    ActiveKeyCaptureControl.Value := modifiers keyName
+    return 1
+}
+
+CaptureSideButton(buttonName, *) {
+    global MacroGui, ActiveKeyCaptureControl
 
     if !WinActive("ahk_id " MacroGui.Hwnd)
         return
 
-    ; Assign the side mouse button to the field physically under the cursor,
-    ; never to a previously focused field such as Open menu hotkey.
-    MouseGetPos(, , , &controlHwnd, 2)
-    if !KeyCaptureControls.Has(controlHwnd)
+    if !IsObject(ActiveKeyCaptureControl)
         return
 
-    buttonNumber := (wParam >> 16) & 0xFFFF
-    if (buttonNumber = 1)
-        KeyCaptureControls[controlHwnd].Value := "XButton1"
-    else if (buttonNumber = 2)
-        KeyCaptureControls[controlHwnd].Value := "XButton2"
-
-    return 1
+    ActiveKeyCaptureControl.Value := buttonName
 }
 
 ToggleMenu(*) {
     global MacroGui
 
-    if WinExist("ahk_id " MacroGui.Hwnd)
-        MacroGui.Hide()
+    if DllCall("IsWindowVisible", "Ptr", MacroGui.Hwnd)
+        HideMenu()
     else
         ShowMenu()
 }
 
 ShowMenu(*) {
-    global MacroGui
+    global MacroGui, IsEditingHotkeys
+
+    ; While editing, no old hotkey can fire or interfere with assigning the
+    ; same key again. Unsaved field changes therefore remain purely visual.
+    IsEditingHotkeys := true
+    DeactivateAllHotkeys()
+    Hotkey("XButton1", CaptureSideButton.Bind("XButton1"), "On")
+    Hotkey("XButton2", CaptureSideButton.Bind("XButton2"), "On")
     MacroGui.Show("AutoSize Center")
 }
 
+HideMenu(*) {
+    global MacroGui, IsEditingHotkeys, ActiveKeyCaptureControl
+
+    try Hotkey("XButton1", "Off")
+    try Hotkey("XButton2", "Off")
+    MacroGui.Hide()
+    IsEditingHotkeys := false
+    ActiveKeyCaptureControl := 0
+    ApplyHotkeys()
+}
+
+ToggleTool(*) {
+    global ToolEnabled, ToolToggleButton
+    global AutoEmoteEnabled, EmergencyHealingQueuedPresses
+
+    ToolEnabled := !ToolEnabled
+
+    if ToolEnabled {
+        ToolToggleButton.Text := "Disable tool"
+        ShowStatus("Tool enabled. Hotkeys will resume when the menu is hidden.")
+    } else {
+        ToolToggleButton.Text := "Enable tool"
+        AutoEmoteEnabled := false
+        EmergencyHealingQueuedPresses := 0
+        SetTimer(SendAutomaticEmote, 0)
+        ShowStatus("Tool disabled. Only the menu hotkey will remain active.")
+    }
+}
+
 SaveConfiguration(*) {
-    global ConfigFile, MacroCount, MacroKeys, MacroTexts, MenuHotkey
+    global ConfigFile, MacroCount, MacroKeys, MacroTexts
+    global MenuHotkey, ToolToggleHotkey
     global EmergencyHealingMacroIndex
-    global MenuHotkeyControl, KeyControls, TextControls
+    global MenuHotkeyControl, ToolToggleHotkeyControl
+    global KeyControls, TextControls
 
     newKeys := []
     newTexts := []
     usedKeys := Map()
     usedKeys.CaseSense := false
     newMenuHotkey := Trim(MenuHotkeyControl.Value)
+    newToolToggleHotkey := Trim(ToolToggleHotkeyControl.Value)
 
     if (newMenuHotkey = "") {
         ShowStatus("The menu does not have a hotkey.", true)
         return
     }
 
+    if (newToolToggleHotkey = "") {
+        ShowStatus("Enable / disable does not have a hotkey.", true)
+        return
+    }
+
     usedKeys[newMenuHotkey] := true
+
+    if usedKeys.Has(newToolToggleHotkey) {
+        ShowStatus(
+            "The menu and enable / disable hotkeys must be different.",
+            true
+        )
+        return
+    }
+    usedKeys[newToolToggleHotkey] := true
 
     Loop MacroCount {
         keyName := Trim(KeyControls[A_Index].Value)
@@ -267,14 +378,22 @@ SaveConfiguration(*) {
     oldKeys := MacroKeys.Clone()
     oldTexts := MacroTexts.Clone()
     oldMenuHotkey := MenuHotkey
+    oldToolToggleHotkey := ToolToggleHotkey
     MacroKeys := newKeys
     MacroTexts := newTexts
     MenuHotkey := newMenuHotkey
+    ToolToggleHotkey := newToolToggleHotkey
 
     try {
         ApplyHotkeys()
 
         IniWrite(MenuHotkey, ConfigFile, "Settings", "MenuHotkey")
+        IniWrite(
+            ToolToggleHotkey,
+            ConfigFile,
+            "Settings",
+            "ToolToggleHotkey"
+        )
         Loop MacroCount {
             IniWrite(MacroKeys[A_Index], ConfigFile, "Macro" A_Index, "Key")
             IniWrite(MacroTexts[A_Index], ConfigFile, "Macro" A_Index, "Text")
@@ -285,23 +404,34 @@ SaveConfiguration(*) {
         MacroKeys := oldKeys
         MacroTexts := oldTexts
         MenuHotkey := oldMenuHotkey
+        ToolToggleHotkey := oldToolToggleHotkey
         ApplyHotkeys()
         ShowStatus("Could not enable a hotkey: " err.Message, true)
     }
 }
 
 ApplyHotkeys() {
-    global MacroCount, MacroKeys, MenuHotkey, ActiveHotkeys
+    global MacroCount, MacroKeys, MenuHotkey, ToolToggleHotkey
+    global ActiveHotkeys
     global EmergencyHealingMacroIndex
+    global ToolEnabled, IsEditingHotkeys
 
-    for keyName, callback in ActiveHotkeys {
-        try Hotkey(keyName, callback, "Off")
-    }
-    ActiveHotkeys.Clear()
+    DeactivateAllHotkeys()
 
+    if IsEditingHotkeys
+        return
+
+    ; The menu hotkey remains available even while the tool is disabled.
     menuCallback := ToggleMenu
     Hotkey(MenuHotkey, menuCallback, "On")
     ActiveHotkeys[MenuHotkey] := menuCallback
+
+    toggleCallback := ToggleTool
+    Hotkey(ToolToggleHotkey, toggleCallback, "On")
+    ActiveHotkeys[ToolToggleHotkey] := toggleCallback
+
+    if !ToolEnabled
+        return
 
     Loop MacroCount {
         index := A_Index
@@ -315,6 +445,15 @@ ApplyHotkeys() {
 
         ActiveHotkeys[keyName] := callback
     }
+}
+
+DeactivateAllHotkeys() {
+    global ActiveHotkeys
+
+    for keyName, callback in ActiveHotkeys {
+        try Hotkey(keyName, callback, "Off")
+    }
+    ActiveHotkeys.Clear()
 }
 
 RunMacro(index, *) {
