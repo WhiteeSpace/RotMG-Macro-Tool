@@ -31,6 +31,7 @@ global ActiveKeyCaptureControl := 0
 global MenuHotkeyControl
 global ToolToggleHotkeyControl
 global ToolToggleButton
+global NeutralFocusControl
 global StatusText
 global MacroGui
 
@@ -128,12 +129,21 @@ BuildGui() {
     global EmergencyHealingMacroIndex
     global MacroKeys, MacroTexts, MenuHotkey, ToolToggleHotkey
     global MenuHotkeyControl, ToolToggleHotkeyControl
-    global KeyControls, TextControls, ToolToggleButton, StatusText
+    global KeyControls, TextControls, ToolToggleButton
+    global NeutralFocusControl, StatusText
 
     MacroGui := Gui("+AlwaysOnTop", "RotMG Macro Tool")
     MacroGui.SetFont("s10", "Segoe UI")
     MacroGui.MarginX := 18
     MacroGui.MarginY := 16
+
+    ; Create the neutral focus target before every editable control. Windows
+    ; will therefore focus it on the very first frame instead of briefly
+    ; selecting Open menu hotkey and moving the focus afterward.
+    NeutralFocusControl := MacroGui.AddButton(
+        "x0 y0 w1 h1",
+        ""
+    )
 
     MacroGui.AddText("xm w170 h25 0x200", "Open menu hotkey")
     MenuHotkeyControl := AddKeyCapture(
@@ -279,7 +289,7 @@ ToggleMenu(*) {
 
 ShowMenu(*) {
     global MacroGui, IsEditingHotkeys
-    global ActiveKeyCaptureControl, KeyCaptureControls
+    global ActiveKeyCaptureControl, NeutralFocusControl
 
     ; While editing, no old hotkey can fire or interfere with assigning the
     ; same key again. Unsaved field changes therefore remain purely visual.
@@ -287,15 +297,10 @@ ShowMenu(*) {
     DeactivateAllHotkeys()
     Hotkey("XButton1", CaptureSideButton.Bind("XButton1"), "On")
     Hotkey("XButton2", CaptureSideButton.Bind("XButton2"), "On")
-    MacroGui.Show("AutoSize Center")
     ActiveKeyCaptureControl := 0
-
-    ; Remove the automatic focus and text selection Windows gives to the
-    ; first editable control when a dialog is shown.
-    for hwnd, control in KeyCaptureControls
-        SendMessage(0x00B1, 0, 0, control) ; EM_SETSEL: caret at start
-
-    DllCall("SetFocus", "Ptr", MacroGui.Hwnd)
+    MacroGui.Show("AutoSize Center")
+    NeutralFocusControl.Focus()
+    ActiveKeyCaptureControl := 0
 }
 
 HideMenu(*) {
