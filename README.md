@@ -14,9 +14,6 @@ Text macros automatically send:
 
 The default hotkeys are F2 through F12.
 The menu hotkey defaults to F1 and can also be changed in the menu.
-Side mouse buttons are supported: focus a key field, then press Mouse 4 or
-Mouse 5. They are displayed as XButton1 and XButton2. Backspace or Delete
-clears only the currently focused key field.
 
 Default actions:
 
